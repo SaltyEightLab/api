@@ -6,9 +6,7 @@ on:
 
 env:
   AWS_REGION: ap-northeast-1
-  ##ECS_SERVICE: sacicd-service
-  ##ECS_CLUSTER: sacicd-cluster
-  ECS_SERVICE: seatarranger-service
+  ECS_SERVICE: seatarranger-api-service
   ECS_CLUSTER: seatarranger-cluster
   ECS_TASK_DEFINITION: .aws/task-definition.json
 
@@ -17,47 +15,6 @@ permissions:
 
 
 jobs:
-# Web Container Build/Test
-## Get Source
-## Build/Test
-## Docker Image Build
-  web-test-build-image:
-    name: Web Container - Test and Build 
-    runs-on: ubuntu-20.04
-    timeout-minutes: 10
-    defaults: 
-      run:
-        working-directory: web
-    
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Build an Image and Run Tests  # Dockerイメージをビルドし、テストを実行
-        run: |
-          docker image build --target production -t temp_web_image_name:latest .
-# docker image build --target production -t temp_web_image_name:latest --build-arg NEXT_PUBLIC_API_SERVER=http://my-app-sacicd-alb-210697540.ap-northeast-1.elb.amazonaws.com/api .
-## Login AWS
-      - name: Configure AWS credentials  # AWSの認証情報を設定
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}  # AWSアクセスキーID
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}  # AWSシークレットアクセスキー
-          aws-region: ${{ env.AWS_REGION }}  # AWSのリージョンを設定
-
-      - name: Login to Amazon ECR  # Amazon ECRにログイン
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1  # Amazon ECRログイン用のActionを使用
-
-## push image to ECR
-      - name: Push the image to Amazon ECR  # ビルドしたDockerイメージをAmazon ECRにプッシュ
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}  # ECRのレジストリURL
-          ECR_REPOSITORY: ${{ secrets.AWS_ECR_WEB_SERVER_REPOSITORY }}  # ECRのリポジトリ名
-        run: |
-          docker image tag temp_web_image_name:latest $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-
-
 # API Container Build/Test
 ## Get Source
 ## Build/Test
@@ -106,7 +63,7 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-20.04 
-    needs: [web-test-build-image, api-test-build-image]
+    needs: [api-test-build-image]
 
     steps:
       - name: Checkout
@@ -124,19 +81,11 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v1
 
 ## Edit Task Definition
-      - name: Fill in the new image ID in the Amazon ECS task definition for web
-        id: render-web-task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: ${{ env.ECS_TASK_DEFINITION }}
-          container-name: web
-          image: ${{ steps.login-ecr.outputs.registry }}/${{ secrets.AWS_ECR_WEB_SERVER_REPOSITORY }}
-
       - name: Fill in the new image ID in the Amazon ECS task definition for api
         id: render-api-task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: ${{ steps.render-web-task-def.outputs.task-definition }}
+          task-definition: ${{ env.ECS_TASK_DEFINITION }}
           container-name: api
           image: ${{ steps.login-ecr.outputs.registry }}/${{ secrets.AWS_ECR_API_SERVER_REPOSITORY }}
 
